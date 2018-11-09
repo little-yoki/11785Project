@@ -5,6 +5,7 @@ from torch.optim import lr_scheduler
 from torch.utils import data
 import numpy as np
 import matplotlib.pyplot as plt
+from sklearn.model_selection import train_test_split
 
 from model import UNet
 
@@ -16,30 +17,26 @@ LR = 0.001
 
 
 class Dataset(data.Dataset):
-    def __init__(self, images, depths, labels=None):
+    def __init__(self, inputs, labels=None):
         """
         Initialization
-        :param images: H x W x 3 x N
-        :param depths: H x W x N
-        :param labels: H x W x N
+        :param inputs: N x 3 x H x W
+        :param labels: N x H x W
         """
-        images = np.transpose(images, (3, 2, 0, 1))  # N x 3 x H x W
-        depths = np.transpose(depths, (2, 0, 1))  # N x H x W
-        depths = np.expand_dims(depths, 1)  # N x H x W
-        self.data = np.concatenate((images, depths), axis=1)  # N x 4 x H x W
-        self.labels = np.transpose(labels, (2, 0, 1))   # N x H x W
-        self.n_pixels = self.data.shape[2] * self.data.shape[3]
+        self.inputs = inputs
+        self.labels = labels
+        self.n_pixels = self.inputs.shape[2] * self.inputs.shape[3]  # H * W
 
     def __len__(self):
         """Denotes the total number of samples"""
-        return len(self.data)
+        return len(self.inputs)
 
     def __getitem__(self, idx):
         """Generates one sample of data"""
         if self.labels is not None:
-            return x.data[idx], self.labels[idx]
+            return x.inputs[idx], self.labels[idx]
         else:
-            return x.data[idx]
+            return x.inputs[idx]
 
 
 def train(model, optimizer, train_loader, epoch):
@@ -122,6 +119,23 @@ def plot(train_losses, train_accs, val_losses, val_accs, n_epochs):
     plt.savefig('Acc_vs_epochs.png')
 
 
+def preprocess(images, depths, labels):
+    """
+
+    :param images: H x W x 3 x N
+    :param depths: H x W x N
+    :param labels: H x W x N
+    :return: [N x 4 x H x W] data, [N x H x W] labels
+    """
+    images = np.transpose(images, (3, 2, 0, 1))  # N x 3 x H x W
+    depths = np.transpose(depths, (2, 0, 1))  # N x H x W
+    depths = np.expand_dims(depths, 1)  # N x H x W
+    inputs = np.concatenate((images, depths), axis=1)  # N x 4 x H x W
+    labels = np.transpose(labels, (2, 0, 1))  # N x H x W
+
+    return inputs, labels
+
+
 if __name__ == '__main__':
     filename = 'nyu_depth_v2_labeled.npy'
     inputs = np.load(filename)
@@ -129,13 +143,17 @@ if __name__ == '__main__':
     labels = inputs[()]['labels']
     images = inputs[()]['images']
 
-    model = UNet()
+    inputs, labels = preprocess(images, depths, labels)
+    X_train, X_val, y_train, y_val = train_test_split(inputs, labels, test_size=0.1)
+
+    in_channels, classes = 4, 895
+    model = UNet(in_channels, classes).to(DEVICE)
     optimizer = optim.Adam(model.parameters(), lr=LR, weight_decay=1e-4)
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', patience=1, verbose=True)
 
-    train_set = Dataset(images, depths, labels)
+    train_set = Dataset(X_train, y_train)
     train_loader = data.DataLoader(train_set, batch_size=BATCH_SIZE, shuffle=True, num_workers=N_WORKERS)
-    val_set = Dataset(images, depths, labels)
+    val_set = Dataset(X_val, y_val)
     val_loader = data.DataLoader(val_set, batch_size=128, shuffle=False, num_workers=N_WORKERS)
 
     train_losses = []
