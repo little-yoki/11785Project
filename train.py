@@ -137,11 +137,13 @@ def preprocess(images, depths, labels):
 
 
 if __name__ == '__main__':
-    filename = 'nyu_depth_v2_labeled.npy'
+    filename = 'nyu_data.npy'
+    print('Loading data...')
     inputs = np.load(filename)
     depths = inputs[()]['depths']
     labels = inputs[()]['labels']
     images = inputs[()]['images']
+    print('Data loaded succeeded!')
 
     inputs, labels = preprocess(images, depths, labels)
     X_train, X_val, y_train, y_val = train_test_split(inputs, labels, test_size=0.1)
