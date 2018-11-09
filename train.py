@@ -6,13 +6,15 @@ from torch.utils import data
 import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.model_selection import train_test_split
+import math
 
 from model import UNet
 
-DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+# DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+DEVICE = 'cpu'
 N_WORKERS = 4
 N_EPOCHS = 10
-BATCH_SIZE = 64
+BATCH_SIZE = 4
 LR = 0.001
 
 
@@ -34,9 +36,9 @@ class Dataset(data.Dataset):
     def __getitem__(self, idx):
         """Generates one sample of data"""
         if self.labels is not None:
-            return x.inputs[idx], self.labels[idx]
+            return self.inputs[idx].astype('float'), self.labels[idx].astype('int32')
         else:
-            return x.inputs[idx]
+            return self.inputs[idx].astype('float')
 
 
 def train(model, optimizer, train_loader, epoch):
@@ -48,7 +50,7 @@ def train(model, optimizer, train_loader, epoch):
 
     for batch_id, (inputs, target) in enumerate(train_loader):
         torch.cuda.empty_cache()
-        inputs, target = inputs.to(DEVICE), target.to(DEVICE)
+        inputs, target = inputs.float().to(DEVICE), target.long().to(DEVICE)
 
         optimizer.zero_grad()
         output = model(inputs)  # N x n_classes x H x W
@@ -84,7 +86,7 @@ def validation(model, val_loader):
     with torch.no_grad():
         for inputs, target in val_loader:  # list of cuda tensor, list of cpu tensor
             torch.cuda.empty_cache()
-            inputs, target = inputs.to(DEVICE), target.to(DEVICE)
+            inputs, target = inputs.float().to(DEVICE), target.to(DEVICE)
 
             output = model(inputs)   # N x n_classes x H x W
             val_loss += criterion(output, target).item()
@@ -119,7 +121,7 @@ def plot(train_losses, train_accs, val_losses, val_accs, n_epochs):
     plt.savefig('Acc_vs_epochs.png')
 
 
-def preprocess(images, depths, labels):
+def preprocess(images, depths, labels, sample_size=0.2):
     """
 
     :param images: H x W x 3 x N
@@ -133,7 +135,9 @@ def preprocess(images, depths, labels):
     inputs = np.concatenate((images, depths), axis=1)  # N x 4 x H x W
     labels = np.transpose(labels, (2, 0, 1))  # N x H x W
 
-    return inputs, labels
+    n = len(inputs)
+    idx = math.floor(sample_size * n)
+    return inputs[:idx], labels[:idx]
 
 
 if __name__ == '__main__':
