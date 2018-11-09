@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 import torch
 import torch.nn as nn
+from torch.autograd import Variable
+import numpy as np
 
 class UNet(nn.Module):
     def __init__(self, in_channels, classes, dropout=False, bilinear=False):
@@ -15,9 +17,9 @@ class UNet(nn.Module):
         
         #decoding
         self.decode_layer1 = Concat_conv(512)
-        self.decode_layer1 = Concat_conv(256)
-        self.decode_layer1 = Concat_conv(128)
-        self.decode_layer1 = Concat_conv(64)
+        self.decode_layer2 = Concat_conv(256)
+        self.decode_layer3 = Concat_conv(128)
+        self.decode_layer4 = Concat_conv(64)
         
         #up sampling
         self.up1 = Upsample(1024, 512, bilinear)
@@ -29,7 +31,7 @@ class UNet(nn.Module):
         self.down = nn.MaxPool2d(kernel_size=2, stride=2)
         
         #prediction
-        self.output_conv = nn.Conv2d(64, out_classes, kernel_size=1)
+        self.output_conv = nn.Conv2d(64, classes, kernel_size=1, bias=False)
 
         # Weight initialization
         for m in self.modules():
@@ -86,7 +88,7 @@ class Double_conv(nn.Module):
 
 class Upsample(nn.Module):
     def __init__(self, in_channels, out_channels, bilinear=False):
-        super(upsample, self).__init__()
+        super(Upsample, self).__init__()
         
         if bilinear:
             self.up = nn.Upsample(scale_factor=2, mode='bilinear')
@@ -106,3 +108,8 @@ class Concat_conv(nn.Module):
         out = torch.cat([encoder_layer, decoder_layer], dim=1)
         out = self.conv(out)
         return out
+
+# test model 
+#x = Variable(torch.FloatTensor(np.random.random((1, 3, 480, 640))))
+#net = UNet(3, 20)
+#out = net(x)
