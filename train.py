@@ -10,12 +10,16 @@ import math
 
 from model import UNet
 
-# DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
-DEVICE = 'cpu'
+DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+# DEVICE = 'cpu'
 N_WORKERS = 4
 N_EPOCHS = 10
-BATCH_SIZE = 4
+BATCH_SIZE = 1
 LR = 0.001
+OPTIMIZER = 'SGD'
+AVERAGE_RGB = False
+SAMPLE_RATE = 1
+TEST_SIZE = 0.2
 
 
 class Dataset(data.Dataset):
@@ -76,9 +80,9 @@ def train(model, optimizer, train_loader, epoch):
     return train_loss, train_acc
 
 
-def validation(model, val_loader):
+def validate(model, val_loader):
     print('Validating...')
-    criterion = nn.CrossEntropyLoss(reduction='sum')
+    criterion = nn.CrossEntropyLoss()
     model.eval()
     val_loss = 0
     correct = 0
@@ -86,7 +90,7 @@ def validation(model, val_loader):
     with torch.no_grad():
         for inputs, target in val_loader:  # list of cuda tensor, list of cpu tensor
             torch.cuda.empty_cache()
-            inputs, target = inputs.float().to(DEVICE), target.to(DEVICE)
+            inputs, target = inputs.float().to(DEVICE), target.long().to(DEVICE)
 
             output = model(inputs)   # N x n_classes x H x W
             val_loss += criterion(output, target).item()
@@ -96,7 +100,7 @@ def validation(model, val_loader):
     val_loss /= len(val_loader.dataset)
     val_acc = correct / len(val_loader.dataset) / val_loader.dataset.n_pixels
     print("Validation loss per sample: {}".format(val_loss))
-    print('Accuracy: {}'.format(acc))
+    print('Accuracy: {}'.format(val_acc))
 
     return val_loss, val_acc
 
@@ -121,26 +125,31 @@ def plot(train_losses, train_accs, val_losses, val_accs, n_epochs):
     plt.savefig('Acc_vs_epochs.png')
 
 
-def preprocess(images, depths, labels, sample_size=0.2):
+def preprocess(images, depths, labels, average_rgb=True, sample_rate=0.2):
     """
 
     :param images: H x W x 3 x N
     :param depths: H x W x N
     :param labels: H x W x N
-    :return: [N x 4 x H x W] data, [N x H x W] labels
+    :param average_rgb: if true, the rgb channels will be average into 1 channel
+    :param sample_rate: how many data will be sample
+    :return: [N x 4 x H x W] data or [N x 2 x H x W] if average_rgb is True, [N x H x W] labels
     """
     images = np.transpose(images, (3, 2, 0, 1))  # N x 3 x H x W
+    if average_rgb:
+        images = np.mean(images, axis=1)
+        images = np.expand_dims(images, 1)    # N x 1 x H x W
     depths = np.transpose(depths, (2, 0, 1))  # N x H x W
     depths = np.expand_dims(depths, 1)  # N x H x W
-    inputs = np.concatenate((images, depths), axis=1)  # N x 4 x H x W
+    inputs = np.concatenate((images, depths), axis=1)  # N x 4(2) x H x W
     labels = np.transpose(labels, (2, 0, 1))  # N x H x W
 
     n = len(inputs)
-    idx = math.floor(sample_size * n)
+    idx = math.floor(sample_rate * n)
     return inputs[:idx], labels[:idx]
 
 
-if __name__ == '__main__':
+def main():
     filename = 'nyu_data.npy'
     print('Loading data...')
     inputs = np.load(filename)
@@ -149,18 +158,21 @@ if __name__ == '__main__':
     images = inputs[()]['images']
     print('Data loaded succeeded!')
 
-    inputs, labels = preprocess(images, depths, labels)
-    X_train, X_val, y_train, y_val = train_test_split(inputs, labels, test_size=0.1)
+    inputs, labels = preprocess(images, depths, labels, average_rgb=AVERAGE_RGB, sample_rate=SAMPLE_RATE)
+    X_train, X_val, y_train, y_val = train_test_split(inputs, labels, test_size=TEST_SIZE)
 
-    in_channels, classes = 4, 895
+    in_channels = 2 if AVERAGE_RGB else 4
+    classes = 895
     model = UNet(in_channels, classes).to(DEVICE)
-    optimizer = optim.Adam(model.parameters(), lr=LR, weight_decay=1e-4)
+    optimizer = optim.SGD(model.parameters(), lr=LR, momentum=0.9)
+    if OPTIMIZER == 'Adam':
+        optimizer = optim.Adam(model.parameters(), lr=LR, weight_decay=1e-4)
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', patience=1, verbose=True)
 
     train_set = Dataset(X_train, y_train)
     train_loader = data.DataLoader(train_set, batch_size=BATCH_SIZE, shuffle=True, num_workers=N_WORKERS)
     val_set = Dataset(X_val, y_val)
-    val_loader = data.DataLoader(val_set, batch_size=128, shuffle=False, num_workers=N_WORKERS)
+    val_loader = data.DataLoader(val_set, batch_size=BATCH_SIZE, shuffle=False, num_workers=N_WORKERS)
 
     train_losses = []
     train_accs = []
@@ -170,7 +182,7 @@ if __name__ == '__main__':
         train_loss, train_acc = train(model, optimizer, train_loader, epoch)
         torch.save(model.state_dict(), '{}epoch{}.pt'.format('1st_version', epoch))
 
-        val_loss, val_acc = validate(model, validation_loader)
+        val_loss, val_acc = validate(model, val_loader)
         scheduler.step(val_acc)
 
         train_losses.append(train_loss)
@@ -178,4 +190,8 @@ if __name__ == '__main__':
         val_losses.append(val_loss)
         val_accs.append(val_acc)
 
-    plot(train_losses, train_accs, val_losses, val_accs, N_EPOCHS)
+        plot(train_losses, train_accs, val_losses, val_accs, N_EPOCHS)
+
+
+if __name__ == '__main__':
+    main()
