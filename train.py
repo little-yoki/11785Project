@@ -7,6 +7,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.model_selection import train_test_split
 import math
+import argparse
 
 from model import UNet
 
@@ -17,7 +18,7 @@ N_EPOCHS = 10
 BATCH_SIZE = 1
 LR = 0.001
 OPTIMIZER = 'SGD'
-AVERAGE_RGB = False
+AVERAGE_RGB = True
 SAMPLE_RATE = 1
 TEST_SIZE = 0.2
 
@@ -150,6 +151,13 @@ def preprocess(images, depths, labels, average_rgb=True, sample_rate=0.2):
 
 
 def main():
+    # Training settings
+    parser = argparse.ArgumentParser(description='CNN help')
+    parser.add_argument('-p', '--pretrained', dest='pretrained', action='store_true', default=False)
+    parser.add_argument('-l', '--last-epoch', dest='last_epoch', type=int, default=0)
+    parser.add_argument('-m', '--model', dest='model', type=str, default='')
+    args = parser.parse_args()
+
     filename = 'nyu_data.npy'
     print('Loading data...')
     inputs = np.load(filename)
@@ -164,9 +172,15 @@ def main():
     in_channels = 2 if AVERAGE_RGB else 4
     classes = 895
     model = UNet(in_channels, classes).to(DEVICE)
+    if args.pretrained:
+        model_file = args.model
+        model.load_state_dict(torch.load(model_file))
+        print('Using pretrained model from {}'.format(model_file))
+
     optimizer = optim.SGD(model.parameters(), lr=LR, momentum=0.9)
     if OPTIMIZER == 'Adam':
         optimizer = optim.Adam(model.parameters(), lr=LR, weight_decay=1e-4)
+
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', patience=1, verbose=True)
 
     train_set = Dataset(X_train, y_train)
@@ -178,7 +192,7 @@ def main():
     train_accs = []
     val_losses = []
     val_accs = []
-    for epoch in range(1, N_EPOCHS + 1):
+    for epoch in range(args.last_epoch + 1, N_EPOCHS + 1):
         train_loss, train_acc = train(model, optimizer, train_loader, epoch)
         torch.save(model.state_dict(), '{}epoch{}.pt'.format('1st_version', epoch))
 
@@ -190,7 +204,7 @@ def main():
         val_losses.append(val_loss)
         val_accs.append(val_acc)
 
-        plot(train_losses, train_accs, val_losses, val_accs, N_EPOCHS)
+    plot(train_losses, train_accs, val_losses, val_accs, N_EPOCHS)
 
 
 if __name__ == '__main__':
