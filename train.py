@@ -13,10 +13,10 @@ import pandas as pd
 from model import UNet
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
-# DEVICE = 'cpu'
+#DEVICE = 'cpu'
 N_WORKERS = 4
 N_EPOCHS = 50
-BATCH_SIZE = 1
+BATCH_SIZE = 4
 LR = 0.001
 OPTIMIZER = 'SGD'
 AVERAGE_RGB = True
@@ -131,12 +131,12 @@ def plot(train_losses, train_accs, val_losses, val_accs, epochs):
     plt.savefig('Acc_vs_epochs.png')
 
 
-def preprocess(images, depths, labels, channels='rgbd', average_rgb=True, sample_rate=0.2):
+def preprocess(images, depths, labels, classes, channels='rgbd', average_rgb=True, sample_rate=0.2):
     """
 
-    :param images: H x W x 3 x N
-    :param depths: H x W x N
-    :param labels: H x W x N
+    :param images: N x 3 x H X W
+    :param depths: N x H x W
+    :param labels: N x H x W
     :param channels: 'rgb', 'rgbd' or 'd'
     :param average_rgb: if true, the rgb channels will be average into 1 channel
     :param sample_rate: how many data will be sample
@@ -144,12 +144,12 @@ def preprocess(images, depths, labels, channels='rgbd', average_rgb=True, sample
     """
     if channels not in {'rgb', 'rgbd', 'd'}:
         raise ValueError("channels must be one of 'rgb', 'rgbd' and 'd'")
-    images = np.transpose(images, (3, 2, 0, 1))  # N x 3 x H x W
+    #images = np.transpose(images, (3, 2, 0, 1))  # N x 3 x H x W
     if average_rgb:
         images = np.mean(images, axis=1)
         images = np.expand_dims(images, 1)    # N x 1 x H x W
-    depths = np.transpose(depths, (2, 0, 1))  # N x H x W
-    depths = np.expand_dims(depths, 1)  # N x H x W
+    #depths = np.transpose(depths, (2, 0, 1))  # N x H x W
+    depths = np.expand_dims(depths, 1)  # N x 1 x H x W
     if channels == 'rgbd':
         inputs = np.concatenate((images, depths), axis=1)  # N x 4(2) x H x W
     elif channels == 'rgb':
@@ -157,7 +157,13 @@ def preprocess(images, depths, labels, channels='rgbd', average_rgb=True, sample
     else:
         inputs = depths
 
-    labels = np.transpose(labels, (2, 0, 1))  # N x H x W
+    #labels = np.transpose(labels, (2, 0, 1))  # N x H x W 
+    label_shape = labels.shape
+    labels = labels.reshape(-1)
+    label_dict = {label: idx for idx, label in enumerate(classes)}
+    for label, idx in label_dict.items(): 
+         labels[labels==label] = idx
+    labels = labels.reshape(label_shape)
 
     n = len(inputs)
     idx = math.floor(sample_rate * n)
@@ -195,25 +201,26 @@ def main():
         plot(df['train_loss'], df['train_accuracy'], df['validation_loss'], df['validation_accuracy'], df.index)
         return
 
-    filename = 'nyu_data.npy'
+    filename = 'dataset_small.npy'
     print('Loading data...')
     inputs = np.load(filename)
     depths = inputs[()]['depths']
     labels = inputs[()]['labels']
     images = inputs[()]['images']
+    classes = inputs[()]['classes']
     print('Data loaded succeeded!')
 
-    inputs, labels = preprocess(images, depths, labels, channels=CHANNELS,
+    inputs, labels = preprocess(images, depths, labels, classes, channels=CHANNELS,
                                 average_rgb=AVERAGE_RGB, sample_rate=SAMPLE_RATE)
     X_train, X_val, y_train, y_val = train_test_split(inputs, labels, test_size=TEST_SIZE)
 
     in_channels = get_in_channels()
-    classes = 895
+    classes = len(classes)
     model = UNet(in_channels, classes).to(DEVICE)
     if args.pretrained:
         model_file = args.model
         model.load_state_dict(torch.load(model_file))
-        print('Using pretrained model from {}'.format(model_file))
+        print('sing pretrained model from {}'.format(model_file))
 
     optimizer = optim.SGD(model.parameters(), lr=LR, momentum=0.9)
     if OPTIMIZER == 'Adam':
