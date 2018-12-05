@@ -144,11 +144,11 @@ def preprocess(images, depths, labels, classes, channels='rgbd', average_rgb=Tru
     """
     if channels not in {'rgb', 'rgbd', 'd'}:
         raise ValueError("channels must be one of 'rgb', 'rgbd' and 'd'")
-    images = np.transpose(images, (3, 2, 0, 1))  # N x 3 x H x W
+    #images = np.transpose(images, (3, 2, 0, 1))  # N x 3 x H x W
     if average_rgb:
         images = np.mean(images, axis=1)
         images = np.expand_dims(images, 1)    # N x 1 x H x W
-    depths = np.transpose(depths, (2, 0, 1))  # N x H x W
+    #depths = np.transpose(depths, (2, 0, 1))  # N x H x W
     depths = np.expand_dims(depths, 1)  # N x 1 x H x W
     if channels == 'rgbd':
         inputs = np.concatenate((images, depths), axis=1)  # N x 4(2) x H x W
@@ -157,13 +157,13 @@ def preprocess(images, depths, labels, classes, channels='rgbd', average_rgb=Tru
     else:
         inputs = depths
 
-    labels = np.transpose(labels, (2, 0, 1))  # N x H x W 
-    #label_shape = labels.shape
-    #labels = labels.reshape(-1)
-    #label_dict = {label: idx for idx, label in enumerate(classes)}
-    #for label, idx in label_dict.items(): 
-    #    labels[labels==label] = idx
-    #labels = labels.reshape(label_shape)
+    #labels = np.transpose(labels, (2, 0, 1))  # N x H x W 
+    label_shape = labels.shape
+    labels = labels.reshape(-1)
+    label_dict = {label: idx for idx, label in enumerate(classes)}
+    for label, idx in label_dict.items(): 
+        labels[labels==label] = idx
+    labels = labels.reshape(label_shape)
 
     n = len(inputs)
     idx = math.floor(sample_rate * n)
@@ -207,16 +207,15 @@ def main():
     depths = inputs[()]['depths']
     labels = inputs[()]['labels']
     images = inputs[()]['images']
-    #classes = inputs[()]['classes']
+    classes = inputs[()]['classes']
     print('Data loaded succeeded!')
     
-    classes = None
     inputs, labels = preprocess(images, depths, labels, classes, channels=CHANNELS,
                                 average_rgb=AVERAGE_RGB, sample_rate=SAMPLE_RATE)
     X_train, X_val, y_train, y_val = train_test_split(inputs, labels, test_size=TEST_SIZE)
 
     in_channels = get_in_channels()
-    classes = 895
+    classes = len(classes)
     model = UNet(in_channels, classes).to(DEVICE)
     if args.pretrained:
         model_file = args.model
