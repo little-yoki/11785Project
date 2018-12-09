@@ -10,7 +10,7 @@ import math
 import argparse
 import pandas as pd
 
-from model import UNet
+from model import *
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 #DEVICE = 'cpu'
@@ -217,7 +217,7 @@ def main():
 
     in_channels = get_in_channels()
     classes = 895
-    model = UNet(in_channels, classes).to(DEVICE)
+    model = Fuse_UNet(in_channels, classes).to(DEVICE)
     if args.pretrained:
         model_file = args.model
         model.load_state_dict(torch.load(model_file))

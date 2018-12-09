@@ -10,17 +10,17 @@ import math
 import argparse
 import pandas as pd
 
-from model import UNet
+from model import *
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 #DEVICE = 'cpu'
 N_WORKERS = 4
 N_EPOCHS = 30
-BATCH_SIZE = 1 
+BATCH_SIZE = 4 
 LR = 0.001
 OPTIMIZER = 'SGD'
 AVERAGE_RGB = True
-CHANNELS = 'rgb'
+CHANNELS = 'rgbd'
 SAMPLE_RATE = 1
 TEST_SIZE = 0.2
 
@@ -149,6 +149,13 @@ def preprocess(images, depths, labels, classes, channels='rgbd', average_rgb=Tru
         images = np.mean(images, axis=1)
         images = np.expand_dims(images, 1)    # N x 1 x H x W
     #depths = np.transpose(depths, (2, 0, 1))  # N x H x W
+    max_d = 10.0
+    min_d = 0.7
+    for i in range(len(depths)):
+        #max_d = np.max(depths[i])
+        #min_d = np.min(depths[i])
+        depths[i] = (depths[i] - min_d) / (max_d - min_d) * 255
+
     depths = np.expand_dims(depths, 1)  # N x 1 x H x W
     if channels == 'rgbd':
         inputs = np.concatenate((images, depths), axis=1)  # N x 4(2) x H x W
@@ -201,7 +208,7 @@ def main():
         plot(df['train_loss'], df['train_accuracy'], df['validation_loss'], df['validation_accuracy'], df.index)
         return
 
-    filename = 'nyu_data.npy'
+    filename = 'dataset_mini.npy'
     print('Loading data...')
     inputs = np.load(filename)
     depths = inputs[()]['depths']
@@ -216,7 +223,7 @@ def main():
 
     in_channels = get_in_channels()
     classes = len(classes)
-    model = UNet(in_channels, classes).to(DEVICE)
+    model = Fuse_UNet(in_channels, classes).to(DEVICE)
     if args.pretrained:
         model_file = args.model
         model.load_state_dict(torch.load(model_file))
@@ -226,7 +233,7 @@ def main():
     if OPTIMIZER == 'Adam':
         optimizer = optim.Adam(model.parameters(), lr=LR, weight_decay=1e-4)
 
-    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', patience=1, verbose=True)
+    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', patience=2, verbose=True)
 
     train_set = Dataset(X_train, y_train)
     train_loader = data.DataLoader(train_set, batch_size=BATCH_SIZE, shuffle=True, num_workers=N_WORKERS)
@@ -252,7 +259,7 @@ def main():
     df = pd.DataFrame({'train_loss': train_losses, 'train_accuracy': train_accs,
                        'validation_loss': val_losses, 'validation_accuracy': val_accs})
     df.index = np.arange(1, len(df) + 1)
-    df.to_csv('loss&acc_vs_epoch.csv', index_label='Epoch')
+    df.to_csv('loss_acc_vs_epoch.csv', index_label='Epoch')
 
     #plot(train_losses, train_accs, val_losses, val_accs, N_EPOCHS)
 
